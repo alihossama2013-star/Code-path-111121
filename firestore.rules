@@ -1,0 +1,277 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidIdList(items) {
+      return items is list
+        && items.size() <= 100
+        && (items.size() == 0 || (items[0] is string && items[0].size() <= 64));
+    }
+
+    function isValidDateList(items) {
+      return items is list
+        && items.size() <= 366
+        && (items.size() == 0 || (
+          items[0] is string
+          && items[0].size() == 10
+          && items[0].matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        ));
+    }
+
+    function isValidUserProgress(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'completedLessons',
+          'readLessons',
+          'passedExercises',
+          'quizScores',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'completedLessons',
+          'readLessons',
+          'passedExercises',
+          'quizScores',
+          'progressEpoch',
+          'completionDates',
+          'gameHighScores',
+          'activeLessonId',
+          'selectedLanguageId',
+          'lastView',
+          'activeLessonTab',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && isValidIdList(data.completedLessons)
+        && isValidIdList(data.readLessons)
+        && isValidIdList(data.passedExercises)
+        && data.quizScores is map
+        && data.quizScores.size() <= 100
+        && (!('progressEpoch' in data) || (
+          data.progressEpoch is string
+          && data.progressEpoch.size() >= 1
+          && data.progressEpoch.size() <= 40
+          && data.progressEpoch.matches('^[a-zA-Z0-9_\\-]+$')
+        ))
+        && (!('completionDates' in data) || isValidDateList(data.completionDates))
+        && (!('gameHighScores' in data) || (
+          data.gameHighScores is map
+          && data.gameHighScores.size() <= 50
+        ))
+        && (!('activeLessonId' in data) || (
+          data.activeLessonId is string
+          && data.activeLessonId.size() >= 1
+          && data.activeLessonId.size() <= 64
+          && data.activeLessonId.matches('^[a-zA-Z0-9_\\-]+$')
+        ))
+        && (!('selectedLanguageId' in data) || data.selectedLanguageId == null || (
+          data.selectedLanguageId is string
+          && data.selectedLanguageId.size() >= 1
+          && data.selectedLanguageId.size() <= 32
+          && data.selectedLanguageId.matches('^[a-zA-Z0-9_\\-]+$')
+        ))
+        && (!('lastView' in data) || (
+          data.lastView is string
+          && data.lastView.size() >= 1
+          && data.lastView.size() <= 24
+          && data.lastView in ['landing', 'roadmap', 'lesson', 'playground', 'stack3d', 'dashboard']
+        ))
+        && (!('activeLessonTab' in data) || (
+          data.activeLessonTab is string
+          && data.activeLessonTab.size() >= 1
+          && data.activeLessonTab.size() <= 24
+          && data.activeLessonTab in ['learn', 'practice', 'assessment']
+        ))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEarnedToken(data, userId, tokenId) {
+      return data.keys().hasAll([
+          'uid',
+          'lessonId',
+          'tokenCode',
+          'languageId',
+          'order',
+          'earnedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'lessonId',
+          'tokenCode',
+          'languageId',
+          'order',
+          'earnedAt'
+        ])
+        && isValidId(data.uid)
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && isValidId(data.lessonId)
+        && data.lessonId == tokenId
+        && data.lessonId.size() <= 64
+        && data.tokenCode is string
+        && data.tokenCode.size() >= 4
+        && data.tokenCode.size() <= 16
+        && data.tokenCode.matches('^CP-[0-9]{2,3}$')
+        && data.languageId is string
+        && data.languageId.size() >= 1
+        && data.languageId.size() <= 32
+        && data.languageId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.order is int
+        && data.order >= 1
+        && data.order <= 100
+        && data.earnedAt is timestamp;
+    }
+
+    function isValidEarnedAchievement(data, userId, achievementId) {
+      return data.keys().hasAll([
+          'uid',
+          'achievementId',
+          'category',
+          'tier',
+          'earnedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'achievementId',
+          'category',
+          'tier',
+          'earnedAt'
+        ])
+        && isValidId(data.uid)
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && isValidId(data.achievementId)
+        && data.achievementId == achievementId
+        && data.achievementId.size() <= 64
+        && data.category is string
+        && data.category.size() >= 1
+        && data.category.size() <= 24
+        && data.category in ['chapter', 'track', 'series', 'streak', 'game']
+        && data.tier is string
+        && data.tier.size() >= 1
+        && data.tier.size() <= 24
+        && data.tier in ['bronze', 'silver', 'gold', 'apex']
+        && data.earnedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProgress(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProgress(incoming(), userId)
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'completedLessons',
+            'readLessons',
+            'passedExercises',
+            'quizScores',
+            'progressEpoch',
+            'completionDates',
+            'gameHighScores',
+            'activeLessonId',
+            'selectedLanguageId',
+            'lastView',
+            'activeLessonTab',
+            'updatedAt'
+          ])
+          && incoming().uid == existing().uid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+        );
+      allow delete: if isValidId(userId) && isOwner(userId);
+
+      match /tokens/{tokenId} {
+        allow get: if isValidId(userId) && isValidId(tokenId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId) && existing().uid == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(tokenId)
+          && isOwner(userId)
+          && isValidEarnedToken(incoming(), userId, tokenId)
+          && incoming().earnedAt == request.time
+          && existsAfter(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(tokenId)
+          && isOwner(userId)
+          && isValidEarnedToken(incoming(), userId, tokenId)
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'tokenCode',
+              'languageId',
+              'order',
+              'earnedAt'
+            ])
+            && incoming().uid == existing().uid
+            && incoming().lessonId == existing().lessonId
+            && incoming().earnedAt == request.time
+          );
+        allow delete: if isValidId(userId) && isValidId(tokenId) && isOwner(userId);
+      }
+
+      match /achievements/{achievementId} {
+        allow get: if isValidId(userId) && isValidId(achievementId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId) && existing().uid == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(achievementId)
+          && isOwner(userId)
+          && isValidEarnedAchievement(incoming(), userId, achievementId)
+          && incoming().earnedAt == request.time
+          && existsAfter(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(achievementId)
+          && isOwner(userId)
+          && isValidEarnedAchievement(incoming(), userId, achievementId)
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'category',
+              'tier',
+              'earnedAt'
+            ])
+            && incoming().uid == existing().uid
+            && incoming().achievementId == existing().achievementId
+            && incoming().earnedAt == request.time
+          );
+        allow delete: if isValidId(userId) && isValidId(achievementId) && isOwner(userId);
+      }
+    }
+  }
+}
